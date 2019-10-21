@@ -1,0 +1,2 @@
+rm -f out
+echo < input1 > out
