@@ -46,18 +46,31 @@ extern int nrRobots;
 extern int quota;
 extern int seed;
 
-int fd, fd2, fd3, row, count, mid, numRow;
-int middleNum;
+int fd;
+int fd2;
+int fd3;
+int fd4;
+
 double total;
+int mid, numRow;
 sem_t *pmutx; /* semaphore guarding access to shared data */
+int count; /* local copy of counter */
+int row;
+
+int midReached;
+int printcnt;
+
 char semaphoreMutx[SEMNAMESIZE];
+
 
 void handle_sigint(int sig) 
 { 
-  CHK(close(fd3));
-  CHK(unlink("fuckingtest"));
-  CHK(sem_close(pmutx));
-  CHK(sem_unlink(semaphoreMutx)); 
+	close(fd);
+	unlink("countfile");
+	close(fd2);
+	unlink("rowfile");
+	sem_close(pmutx);
+	sem_unlink(semaphoreMutx); 
 } 
 
 /* General documentation for the following functions is in p3.h
@@ -65,18 +78,69 @@ void handle_sigint(int sig)
    */
   
 void initStudentStuff(void){
-  sprintf(semaphoreMutx,"/%s%ldmutx", COURSEID, (long)getuid());
-  signal(SIGINT, handle_sigint);
-  signal(SIGTSTP, handle_sigint);
-	CHK(fd3 = open("fuckingtest", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
-  if((pmutx = sem_open(semaphoreMutx, O_RDWR|O_CREAT|O_EXCL,S_IRUSR|S_IWUSR, 0)) == SEM_FAILED){
-    CHK((int)(pmutx = sem_open(semaphoreMutx,O_RDWR)));
-  }
-  else{
- 	  //Initialize the file
-  }
-	CHK(sem_post(pmutx)); //files are now initialized
+  	sprintf(semaphoreMutx,"/%s%ldmutx",COURSEID,(long)getuid());
+  	signal(SIGINT, handle_sigint);
+  	signal(SIGTSTP, handle_sigint);
 
+	total = nrRobots * quota;
+	mid = (total/2);	
+
+	int temp = 0;
+	int i = 0;
+	int j = 0;
+
+	while (temp < (int)total) {
+		i++;
+		if (temp < total) {
+			temp = temp + i;
+		}
+		else if (temp > mid) {
+			j++;
+			temp = temp + (i-j);
+		}
+		else if (temp == (int)total) {
+			i++;
+		}
+	}
+	numRow = i;  
+
+	if((pmutx = sem_open(semaphoreMutx, O_RDWR|O_CREAT|O_EXCL,S_IRUSR|S_IWUSR, 0)) != SEM_FAILED){
+		//sleep(1);
+		//Initialize the file
+		CHK(fd = open("countfile", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
+		CHK(fd2 = open("rowfile", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
+		CHK(fd3 = open("printfile", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
+		CHK(fd4 = open("midfile", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
+		count = 0;
+		CHK(lseek(fd, 0, SEEK_SET));
+		assert(sizeof(count) == write(fd, &count, sizeof(count))); //write count to file
+		row = 1;
+		midReached = 0;
+		printcnt = 0;
+
+		CHK(lseek(fd2, 0, SEEK_SET));
+		assert(sizeof(row) == write(fd2, &row, sizeof(row)));  //write row to file
+
+		CHK(lseek(fd3, 0, SEEK_SET));
+		assert(sizeof(row) == write(fd3, &printcnt, sizeof(printcnt)));  //write printcnt to file
+
+		CHK(lseek(fd4, 0, SEEK_SET));
+		assert(sizeof(row) == write(fd4, &midReached, sizeof(midReached)));  //write midcnt to file
+
+		CHK(sem_post(pmutx)); //files are now initialized
+	}
+	else{
+		//sleep(rand() % 2);
+		CHK((int)(pmutx = sem_open(semaphoreMutx, O_RDWR, 1)));
+		CHK(sem_wait(pmutx));
+		CHK(fd = open("countfile", O_RDWR));
+		CHK(fd2 = open("rowfile", O_RDWR));
+
+		CHK(fd3 = open("printfile", O_RDWR));
+		CHK(fd4 = open("midfile", O_RDWR));
+
+		CHK(sem_post(pmutx));
+  }
 }
 
 /*------------YOU WRITE THIS IN p3helper.c:------------------------------
@@ -102,9 +166,81 @@ void initStudentStuff(void){
 
 void placeWidget(int n) {
 
-    printeger(n);
-    fflush(stdout);
+	/* request access to critical section */
+	CHK(sem_wait(pmutx));
 
+	/* begin critical section -- read count, increment count, write count */
+
+	CHK(lseek(fd, 0, SEEK_SET));
+	assert(sizeof(count) == read(fd, &count, sizeof(count)));
+
+	//rowfile set
+	CHK(lseek(fd2, 0, SEEK_SET));
+	assert(sizeof(row) == read(fd2, &row, sizeof(row)));
+
+	CHK(lseek(fd3, 0, SEEK_SET));
+	assert(sizeof(printcnt) == read(fd3, &printcnt, sizeof(printcnt)));
+
+	CHK(lseek(fd4, 0, SEEK_SET));
+	assert(sizeof(midReached) == read(fd4, &midReached, sizeof(midReached)));
+
+	count++;
+
+	if(count == ((nrRobots * quota))){
+		printeger(n);
+		printf("F\n");
+		printf("--mid %d\n", mid);
+		printf("--numRow %d\n", numRow);
+		printf("Flag mid-%d\n", midReached);
+		fflush(stdout);
+		CHK(close(fd));
+		CHK(unlink("countfile"));
+		CHK(close(fd2));
+		CHK(unlink("rowfile"));
+
+		CHK(close(fd3));
+		CHK(unlink("midfile"));
+
+		CHK(close(fd4));
+		CHK(unlink("printfile"));
+
+		CHK(sem_close(pmutx));
+		CHK(sem_unlink(semaphoreMutx));
+	}
+	else{
+		int temp = count;
+		int i;
+
+		for (i=0; i < row; i++) {
+			count = count - i;
+		}
+
+		printeger(n);
+		//printf("|c-%d|", count);
+		fflush(stdout);
+
+		if (row == count) {
+			row++;
+			if (row == mid/2) {
+				midReached = 1;
+			}
+			printf("N\n");
+			fflush(stdout);
+		}
+
+		count = temp;
+		CHK(lseek(fd,0,SEEK_SET));
+		assert(sizeof(count) == write(fd, &count, sizeof(count)));
+
+		CHK(lseek(fd2,0,SEEK_SET));
+		assert(sizeof(row) == write(fd2, &row, sizeof(row)));
+
+		CHK(lseek(fd4,0,SEEK_SET));
+		assert(sizeof(midReached) == write(fd4, &midReached, sizeof(midReached)));
+
+		/* end critical section */
+		CHK(sem_post(pmutx)); /* release critical section */
+	}
 }
 
 /* If you feel the need to create any additional functions, please
