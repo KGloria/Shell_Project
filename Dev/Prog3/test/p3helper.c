@@ -1,4 +1,5 @@
 /* p3helper.c
+   Kyle Gloria 
    Program 3 assignment
    CS570
    SDSU
@@ -19,8 +20,6 @@
 #include <math.h>
 #include <signal.h> 
 
-#define SNAME "/sem"
-
 /*------------YOU WRITE THIS IN p3helper.c:------------------------------
  * Name: initStudentStuff
  * Purpose: initialize any data structures (including semaphores) that
@@ -36,32 +35,28 @@
  * References: The p3 assignment
  */
 
+extern int nrRobots;
+extern int quota;
+extern int seed;
 
 /* You may put declarations/definitions here.
    In particular, you will probably want access to information
    about the job (for details see the assignment and the documentation
    in p3robot.c):
      */
-extern int nrRobots;
-extern int quota;
-extern int seed;
 
-int fd;
-int fd2;
-int fd3;
-int fd4;
-
-double total;
-int mid, numRow;
-sem_t *pmutx; /* semaphore guarding access to shared data */
+int fd, fd2, fd3, fd4;
 int count; /* local copy of counter */
 int row;
-
 int midReached;
 int printcnt;
+int mid, numRow;
+double total;
+
+sem_t *pmutx; /* semaphore guarding access to shared data */
+
 
 char semaphoreMutx[SEMNAMESIZE];
-
 
 void handle_sigint(int sig) 
 { 
@@ -69,6 +64,10 @@ void handle_sigint(int sig)
 	unlink("countfile");
 	close(fd2);
 	unlink("rowfile");
+	close(fd3);
+	unlink("printfile");
+	close(fd4);
+	unlink("midfile");	
 	sem_close(pmutx);
 	sem_unlink(semaphoreMutx); 
 } 
@@ -78,13 +77,16 @@ void handle_sigint(int sig)
    */
   
 void initStudentStuff(void){
+
   	sprintf(semaphoreMutx,"/%s%ldmutx",COURSEID,(long)getuid());
+
   	signal(SIGINT, handle_sigint);
   	signal(SIGTSTP, handle_sigint);
 
 	total = nrRobots * quota;
 	mid = (total/2);	
 
+/*
 	int temp = 0;
 	int i = 0;
 	int j = 0;
@@ -103,39 +105,43 @@ void initStudentStuff(void){
 		}
 	}
 	numRow = i;  
-
+*/
 	if((pmutx = sem_open(semaphoreMutx, O_RDWR|O_CREAT|O_EXCL,S_IRUSR|S_IWUSR, 0)) != SEM_FAILED){
 		//sleep(1);
-		//Initialize the file
-		CHK(fd = open("countfile", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
-		CHK(fd2 = open("rowfile", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
-		CHK(fd3 = open("printfile", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
-		CHK(fd4 = open("midfile", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
+
 		count = 0;
-		CHK(lseek(fd, 0, SEEK_SET));
-		assert(sizeof(count) == write(fd, &count, sizeof(count))); //write count to file
 		row = 1;
 		midReached = 0;
 		printcnt = 0;
 
+		CHK(fd = open("countfile", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
+		CHK(fd2 = open("rowfile", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
+		CHK(fd3 = open("printfile", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
+		CHK(fd4 = open("midfile", O_RDWR|O_CREAT|O_TRUNC,S_IRUSR|S_IWUSR));
+
+		CHK(lseek(fd, 0, SEEK_SET));
+		assert(sizeof(count) == write(fd, &count, sizeof(count))); 
+
 		CHK(lseek(fd2, 0, SEEK_SET));
-		assert(sizeof(row) == write(fd2, &row, sizeof(row)));  //write row to file
+		assert(sizeof(row) == write(fd2, &row, sizeof(row)));  
 
 		CHK(lseek(fd3, 0, SEEK_SET));
-		assert(sizeof(row) == write(fd3, &printcnt, sizeof(printcnt)));  //write printcnt to file
+		assert(sizeof(row) == write(fd3, &printcnt, sizeof(printcnt)));  
 
 		CHK(lseek(fd4, 0, SEEK_SET));
-		assert(sizeof(row) == write(fd4, &midReached, sizeof(midReached)));  //write midcnt to file
+		assert(sizeof(row) == write(fd4, &midReached, sizeof(midReached)));  
 
-		CHK(sem_post(pmutx)); //files are now initialized
+		CHK(sem_post(pmutx)); 
 	}
 	else{
 		//sleep(rand() % 2);
+
 		CHK((int)(pmutx = sem_open(semaphoreMutx, O_RDWR, 1)));
+
 		CHK(sem_wait(pmutx));
+
 		CHK(fd = open("countfile", O_RDWR));
 		CHK(fd2 = open("rowfile", O_RDWR));
-
 		CHK(fd3 = open("printfile", O_RDWR));
 		CHK(fd4 = open("midfile", O_RDWR));
 
@@ -166,15 +172,14 @@ void initStudentStuff(void){
 
 void placeWidget(int n) {
 
-	/* request access to critical section */
+	/* Request access and wait for Critical Section */
 	CHK(sem_wait(pmutx));
 
-	/* begin critical section -- read count, increment count, write count */
+	/* Start of Critical Section */
 
 	CHK(lseek(fd, 0, SEEK_SET));
 	assert(sizeof(count) == read(fd, &count, sizeof(count)));
 
-	//rowfile set
 	CHK(lseek(fd2, 0, SEEK_SET));
 	assert(sizeof(row) == read(fd2, &row, sizeof(row)));
 
@@ -189,18 +194,14 @@ void placeWidget(int n) {
 	if(count == ((nrRobots * quota))){
 		printeger(n);
 		printf("F\n");
-		printf("--mid %d\n", mid);
-		printf("--numRow %d\n", numRow);
-		printf("Flag mid-%d\n", midReached);
 		fflush(stdout);
+
 		CHK(close(fd));
 		CHK(unlink("countfile"));
 		CHK(close(fd2));
 		CHK(unlink("rowfile"));
-
 		CHK(close(fd3));
 		CHK(unlink("midfile"));
-
 		CHK(close(fd4));
 		CHK(unlink("printfile"));
 
@@ -208,38 +209,45 @@ void placeWidget(int n) {
 		CHK(sem_unlink(semaphoreMutx));
 	}
 	else{
-		int temp = count;
-		int i;
 
-		for (i=0; i < row; i++) {
-			count = count - i;
-		}
-
+		printcnt++;
 		printeger(n);
-		//printf("|c-%d|", count);
 		fflush(stdout);
 
-		if (row == count) {
-			row++;
-			if (row == mid/2) {
-				midReached = 1;
+		if (row == printcnt) {
+			if (midReached == 0) {	
+				row++; 
 			}
+			printcnt = 0;
 			printf("N\n");
 			fflush(stdout);
+
+			if (count > mid) {
+				midReached = 1;
+			}
 		}
 
-		count = temp;
+		if (midReached == 1) {
+			row = row - 2;
+			midReached = 0;
+		}
+
 		CHK(lseek(fd,0,SEEK_SET));
 		assert(sizeof(count) == write(fd, &count, sizeof(count)));
 
 		CHK(lseek(fd2,0,SEEK_SET));
 		assert(sizeof(row) == write(fd2, &row, sizeof(row)));
 
+		CHK(lseek(fd3,0,SEEK_SET));
+		assert(sizeof(printcnt) == write(fd3, &printcnt, sizeof(printcnt)));
+
 		CHK(lseek(fd4,0,SEEK_SET));
 		assert(sizeof(midReached) == write(fd4, &midReached, sizeof(midReached)));
 
-		/* end critical section */
-		CHK(sem_post(pmutx)); /* release critical section */
+
+		/* End of the critical section */
+		/* Release of the critical section */
+		CHK(sem_post(pmutx)); 
 	}
 }
 
