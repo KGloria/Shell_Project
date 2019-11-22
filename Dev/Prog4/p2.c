@@ -14,6 +14,9 @@
 
 int numCmds = 1;
 
+int pipefd[2];
+int pipeFlag = 0;
+
 int inFlag = 0;
 int outFlag = 0;
 int ampFlag= 0;
@@ -34,6 +37,8 @@ int redirectFlag = 0;
 
 int *OUT = NULL;
 int *IN = NULL;
+char inChar[256];
+char outChar[256];
 
 char *argptr[MAXITEM];
 char parameters[MAXITEM][STORAGE];
@@ -67,7 +72,7 @@ void myhandler(int signum)
 
 int main (int argc, char *argv[])
 {
-    char *prompt = "%1% ";
+    //char *prompt = "%1% ";
     int c;
     int cmdArg;
     int cmdDup;
@@ -116,14 +121,14 @@ int main (int argc, char *argv[])
         }
 
         
-        //checkPar(argptr, parameters);
+        checkPar(argptr, parameters);
         //printf("idx %d\n", idx);
         //Testing purposes
         //printf("%d ----\n", c);
         //printFlags();
 
-        //printf("%d -- IN\n", IN);
-        //printf("%d -- OUT: \n", OUT);
+        printf("%d -- IN string:%s\n", IN, inChar);
+        printf("%d -- OUT: string:%s\n", OUT, outChar);
         //printf("arg%d arg --- %d\n", argc, argptr[1]);
         //printf("%s\n", argptr);
 
@@ -339,8 +344,17 @@ int parse(char *s, char *argptr[MAXITEM], char parameters[][STORAGE])
             clearFlag = 0;
             return -1;
         }
+        if((strcmp("logout", s) == 0) && (idx ==0))
+        {
+            clearFlag = 0;
+            return -1;
+        }
+
         if (c==-1) break;
-        strcpy(parameters[idx++],s);
+
+        if (c != 2048 ) {
+            strcpy(parameters[idx++],s);
+        }
         ampFlag = 0;
 
         if (strcmp("<", s) == 0) 
@@ -363,6 +377,11 @@ int parse(char *s, char *argptr[MAXITEM], char parameters[][STORAGE])
             outFlag = 1;
             oRedirect = 1;
         }
+
+        if (strcmp("|", s) == 0) {
+            pipeFlag = 1;
+        }
+
         if (strcmp("&", s) == 0) ampFlag = 1;
         if (strcmp(">&", s) == 0)
         {
@@ -381,11 +400,15 @@ int parse(char *s, char *argptr[MAXITEM], char parameters[][STORAGE])
         {
             if (OUT == NULL && oRedirect == 1 && (strcmp(s,"&") != 0))
             {
-                OUT = parameters[idx-1];
+                strcpy(outChar, parameters[idx-1]);
+                OUT = outChar;
+                idx--;
             }
             else if (IN == NULL && iRedirect == 1 && (strcmp(s,"&") != 0))
             {
-                IN = parameters[idx-1];
+                strcpy(inChar, parameters[idx-1]);
+                IN = inChar;
+                idx--;
             }
             else {
                 argptr[ptridx++] = parameters[idx-1];
