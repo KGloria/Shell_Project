@@ -8,8 +8,10 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/Dev/Prog4/a.out",
-            "args": [],
+            "program": "${workspaceFolder}/Dev/Prog4/p2",
+            "args": [
+                "test.txt"
+                ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

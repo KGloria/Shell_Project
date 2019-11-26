@@ -21,6 +21,8 @@ int parse(char *s, char *argptr[MAXITEM], char parameters[][STORAGE]);
 
 void execcmd();
 
+void pipecmd();
+
 int file_exists(const char *file_name);
 
 int redirectSetUp();

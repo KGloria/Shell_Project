@@ -3,8 +3,13 @@
     Instructor: John Carroll
     Term: Fall 2019 
     School: San Diego State University
-    Due Date: October 9, 2019
+    Due Date: December 6, 2019
 */
+
+
+//NOTES: ADD METHOD TO CLEAR PIPETR AND PIPEARG AND PIPE WILL BE FINISHED
+// WORK ON HISTORY METHOD
+
 #include "p2.h"
 #include "getword.h"
 
@@ -16,12 +21,15 @@ int numCmds = 1;
 
 int pipefd[2];
 int pipeFlag = 0;
+int pipecmdhandled = 0;
 
 int inFlag = 0;
 int outFlag = 0;
 int ampFlag= 0;
 int idx = 0;
 int ptridx = 0;
+
+int pipeidx = 0;
 
 int IORedirect = 0;
 
@@ -40,6 +48,8 @@ int *IN = NULL;
 char inChar[256];
 char outChar[256];
 
+char *PIPEPTR[MAXITEM];
+char *PIPEARG;
 char *argptr[MAXITEM];
 char parameters[MAXITEM][STORAGE];
 char s[STORAGE];
@@ -51,6 +61,7 @@ static void printFlags()
     printf("< = %d\n", inFlag);
     printf("> = %d\n", outFlag);
     printf("& = %d\n", ampFlag);
+    printf("| = %d\n", pipeFlag);
 }
 
 static void clearFlags()
@@ -63,6 +74,9 @@ static void clearFlags()
     IN = NULL;
     OUT = NULL;
     redirectFlag = 0;
+    pipeFlag = 0;
+    pipecmdhandled = 0;
+    pipeidx =0;
 }
 
 void myhandler(int signum)
@@ -121,16 +135,22 @@ int main (int argc, char *argv[])
         }
 
         
-        checkPar(argptr, parameters);
+        //checkPar(argptr, parameters);
         //printf("idx %d\n", idx);
         //Testing purposes
         //printf("%d ----\n", c);
-        //printFlags();
+        printFlags();
 
-        printf("%d -- IN string:%s\n", IN, inChar);
-        printf("%d -- OUT: string:%s\n", OUT, outChar);
+        //for (int k = 0; k < pipeidx; k++) {
+        //    printf("%d -- IN string:%s\n", PIPEPTR[k], PIPEPTR[k]);
+        //}
+
+        //printf("%d -- IN string:%s\n", IN, inChar);
+        //printf("%d -- OUT: string:%s\n", OUT, outChar);
         //printf("arg%d arg --- %d\n", argc, argptr[1]);
         //printf("%s\n", argptr);
+        //printf("%s -- PIPEPTR\n", PIPEPTR);
+        //printf("%s -- PIPEARG\n", PIPEARG);
 
         if (c == -1) break;
 
@@ -176,6 +196,10 @@ int main (int argc, char *argv[])
         {
             break;
         }
+        else if (pipeFlag == 1){
+            pipecmd();
+            clearFlags();
+        }
         else {
             execcmd();
             clearFlags();
@@ -205,6 +229,77 @@ void checkPar(char *argptr[MAXITEM], char parameters[][STORAGE])
     }
 }
 
+void pipecmd() {
+    pid_t child_pid, tpid, grandch_pid;
+    int child_status, grand_status;
+    int redirection_return;
+    int dev;
+    char buf;
+
+    fflush(stdout);
+    fflush(stderr);
+
+    if (isEmpty == 1) return;
+
+    child_pid = fork();
+
+    if (child_pid == -1) 
+    {
+        perror("Cannot Fork.");
+        return;
+    }
+
+    if(child_pid == 0) {
+        pipe(pipefd);
+    }
+
+    if(child_pid == 0 && grandch_pid != 0) {
+        fflush(stdout);
+        fflush(stderr);
+        grandch_pid = fork();
+
+        if (grandch_pid == -1) 
+        {
+            perror("Cannot Fork.");
+            return;
+        }
+        if(grandch_pid == 0) {
+            //printf("GRAND\n");
+            close(pipefd[0]); //close read end of pipe
+            dup2(pipefd[1], STDOUT_FILENO); //set up stdout to write to pipe
+            redirection_return = redirectSetUp();
+            execvp(parameters[0], argptr);
+            exit(0);
+        }
+        else {
+            /* This is done by the child process. */    
+            //printf("CHILD\n");
+            close(pipefd[1]);
+            dup2(pipefd[0], STDIN_FILENO);
+            redirection_return = redirectSetUp();
+            execvp(PIPEARG, PIPEPTR);
+            do{
+                grand_status = wait(NULL); 
+            }while(grand_status != grandch_pid);
+            exit(0);
+        }
+    }
+    else {
+        //printf("PARENT\n");
+        /* This is run by the parent.  Wait for the child
+            to terminate. */ 
+        if (!ampFlag)
+        { do{
+            child_status = wait(NULL); 
+            }while(child_status != child_pid);
+        }
+        else if (ampFlag) 
+        {
+            printf("%s [", parameters[0]);
+            printf("%d]\n", child_pid);
+        }
+    }
+}
 
 void execcmd() {
     pid_t child_pid, tpid;
@@ -240,7 +335,6 @@ void execcmd() {
         }
 
         /* This is done by the child process. */     
-
         execvp(parameters[0], argptr);
         /* If execvp returns, it must have failed. */
         if (idx != 0 || isEmpty == 1) printf("Unknown command\n");
@@ -353,6 +447,9 @@ int parse(char *s, char *argptr[MAXITEM], char parameters[][STORAGE])
         if (c==-1) break;
 
         if (c != 2048 ) {
+            if (pipeFlag == 1 && pipecmdhandled == 0) {
+                PIPEARG = parameters[idx];
+            }
             strcpy(parameters[idx++],s);
         }
         ampFlag = 0;
@@ -371,7 +468,7 @@ int parse(char *s, char *argptr[MAXITEM], char parameters[][STORAGE])
         {
             if (outFlag == 1) {
                 perror("Multiple output redirections detected. Cannot continue.");
-                return -255;
+                return -256;
             }
             redirectFlag = 1;
             outFlag = 1;
@@ -379,7 +476,12 @@ int parse(char *s, char *argptr[MAXITEM], char parameters[][STORAGE])
         }
 
         if (strcmp("|", s) == 0) {
+            if (pipeFlag == 1) {
+                perror("Multiple pipe characters detected. Cannot continue.");
+                return -257;
+            }
             pipeFlag = 1;
+            *parameters[idx++] == '\0';
         }
 
         if (strcmp("&", s) == 0) ampFlag = 1;
@@ -388,7 +490,7 @@ int parse(char *s, char *argptr[MAXITEM], char parameters[][STORAGE])
             printf("redirect& \n");
             if (outFlag == 1) {
                 perror("Multiple output redirections detected. Cannot continue.");
-                return -255;
+                return -256;
             }
             redirectFlag = 1;
             outFlag = 1;
@@ -411,12 +513,20 @@ int parse(char *s, char *argptr[MAXITEM], char parameters[][STORAGE])
                 idx--;
             }
             else {
+                if (pipeFlag == 1 ) {
+                    if (pipecmdhandled == 0) {
+                        argptr[ptridx++] = '\0';
+                        pipecmdhandled = 1;
+                    }
+                    PIPEPTR[pipeidx++] = parameters[idx-1];
+                }
                 argptr[ptridx++] = parameters[idx-1];
             }
 
         }
     }
     clearFlag = 0;
+    PIPEPTR[pipeidx] = '\0';
     if (ampFlag == 1)
     {
         argptr[ptridx-1] = '\0';
