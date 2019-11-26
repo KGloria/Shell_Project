@@ -139,7 +139,7 @@ int main (int argc, char *argv[])
         //printf("idx %d\n", idx);
         //Testing purposes
         //printf("%d ----\n", c);
-        printFlags();
+        //printFlags();
 
         //for (int k = 0; k < pipeidx; k++) {
         //    printf("%d -- IN string:%s\n", PIPEPTR[k], PIPEPTR[k]);
