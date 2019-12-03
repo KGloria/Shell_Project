@@ -38,7 +38,6 @@ int isEmpty = 0;
 int clearFlag = 0;
 int blank = 1;
 int lastCmdCD = 0;
-int bangFlag = 0;
 
 int cmdHandledFlag = 0;
 int cmdFlag = 0;
@@ -55,7 +54,7 @@ char *argptr[MAXITEM];
 char parameters[MAXITEM][STORAGE];
 char s[STORAGE];
 
-char historyArr[STORAGE];
+
 
 static void printFlags()
 {
@@ -77,7 +76,7 @@ static void clearFlags()
     redirectFlag = 0;
     pipeFlag = 0;
     pipecmdhandled = 0;
-    pipeidx = 0;
+    pipeidx =0;
 }
 
 void myhandler(int signum)
@@ -95,16 +94,7 @@ int main (int argc, char *argv[])
     pid_t child_pid, parent_pid, tpid;
     int child_status;
 
-    FILE * hFile;
-    int saved_stdout;
-    int removeTempFiles;
-    int hfd;
-    int randNum = (rand() % (100000 - 10000 + 1)) + 10000; 
     DIR * dir;
-    char history[12] = "hp2cfile";
-
-    removeTempFiles = remove(history);
-    hfd = open(history, O_RDWR | O_CREAT);
 
     setpgid(0, 0);
     (void) signal(SIGTERM, myhandler);
@@ -129,12 +119,6 @@ int main (int argc, char *argv[])
         clearFlags();
         memset(argptr, 0, MAXITEM * sizeof *argptr);
         memset(parameters, 0, MAXITEM * sizeof *parameters);
-        memset(historyArr, 0, sizeof *historyArr);
-
-        if (bangFlag == 1) {
-            printf("BANG\n");
-            bangFlag = 0;
-        }
 
         if (cmdHandledFlag == 1){
             blank = 1;
@@ -149,14 +133,13 @@ int main (int argc, char *argv[])
             if (argptr[0] != NULL)
                 numCmds++;
         }
-        //printf("%s\n", historyArr);
-        //hfd = open(history, O_RDWR | O_CREAT, S_IRUSR, S_IWUSR);
+
         
         //checkPar(argptr, parameters);
         //printf("idx %d\n", idx);
         //Testing purposes
         //printf("%d ----\n", c);
-        //printFlags();
+        printFlags();
 
         //for (int k = 0; k < pipeidx; k++) {
         //    printf("%d -- IN string:%s\n", PIPEPTR[k], PIPEPTR[k]);
@@ -175,24 +158,6 @@ int main (int argc, char *argv[])
         {
             fflush(stdout);
             continue;
-        }
-
-        else if (((strcmp(parameters[0],"!1")) >= 0) && ((strcmp(parameters[0],"!7")) <= 0))
-        {
-            FILE *file = fopen(history, "r");
-            int historyCount = 0;
-            char charAt = parameters[0][1];
-            int intAt = charAt - '0';
-            char buf[STORAGE];
-            printf("%d\n", intAt);
-            bangFlag = 1;
-            while (fgets(buf, 256, file) != NULL){
-                if (historyCount == (intAt-1)) {
-                    printf("%s",buf); 
-                    break;
-                }
-                historyCount++;
-            }
         }
 
         else if ((strcmp(parameters[0],"cd")) == 0)
@@ -231,30 +196,20 @@ int main (int argc, char *argv[])
         {
             break;
         }
+        else if (pipeFlag == 1){
+            pipecmd();
+            clearFlags();
+        }
         else {
-            saved_stdout = dup(1);
-            if(dup2(hfd, STDOUT_FILENO) < 0)
-            {
-                perror("Dup2() has failed to redirect output.");
-                exit(-4);
-            }
-            printf("%s\n", historyArr);
-            dup2(saved_stdout, STDOUT_FILENO);
-            if (pipeFlag == 1){
-                pipecmd();
-            }
-            else {
-                execcmd();
-            }
+            execcmd();
             clearFlags();
         }
         cmdHandledFlag = 1;
+
     }
-    close(hfd);
-    close(saved_stdout);
+
     killpg(getpgrp(), SIGTERM);
     printf("p2 terminated.\n"); //prtintf comes after killpg
-    remove(history);
     exit(0);
 }
 
@@ -282,10 +237,11 @@ void pipecmd() {
     int ifd, ofd = 0;
     char buf;
 
-    if (isEmpty == 1) return;
-
     fflush(stdout);
     fflush(stderr);
+
+    if (isEmpty == 1) return;
+
     child_pid = fork();
 
     if (child_pid == -1) 
@@ -296,82 +252,86 @@ void pipecmd() {
 
     if(child_pid == 0) {
         pipe(pipefd);
+    }
+
+    if(child_pid == 0 && grandch_pid != 0) {
         fflush(stdout);
         fflush(stderr);
         grandch_pid = fork();
+
         if (grandch_pid == -1) 
         {
             perror("Cannot Fork.");
             return;
         }
-    }
-
-    if(child_pid == 0 && grandch_pid != 0) {
-        //should only have output
-        if(OUT != NULL)
-        {
-            if (file_exists(OUT) == 0)
+        if(grandch_pid == 0) {
+            //should only have input
+            if(IN != NULL)
             {
-                perror("File exists");
-                return;
-            }
-            ofd = open(OUT,O_RDWR | O_CREAT | O_TRUNC, S_IRUSR, S_IWUSR);
+                ifd = open(IN, O_RDONLY);
+                if (ifd < 0) 
+                {
+                    perror("Cannot read input.");
+                    exit(-3);
+                }
 
-            if (ofd < 0) 
-            {
-                perror("Existing file. Cannot overwrite.");
-                exit(-2);
+                if(dup2(ifd, STDIN_FILENO) < 0)
+                {
+                    perror("Dup2() has failed to redirect input.");
+                    exit(-5);
+                }
+                close(ifd);
             }
-
-            if(dup2(ofd, STDOUT_FILENO) < 0)
-            {
-                perror("Dup2() has failed to redirect output.");
-                exit(-4);
-            }
-
-            if(dup2(ofd, STDERR_FILENO) < 0)
-            {
-                perror("Dup2() has failed to redirect output.");
-                exit(-4);
-            }
-            close(ofd);
-        }           
-        /* This is done by the child process. */    
-        //printf("CHILD\n");
-        close(pipefd[1]);
-        dup2(pipefd[0], STDIN_FILENO);
-        close(pipefd[0]);
-        execvp(PIPEARG, PIPEPTR);
-        exit(0);
-    }
-
-    if (grandch_pid == 0) {
-        //should only have input
-        if(IN != NULL)
-        {
-            ifd = open(IN, O_RDONLY);
-            if (ifd < 0) 
-            {
-                perror("Cannot read input.");
-                exit(-3);
-            }
-
-            if(dup2(ifd, STDIN_FILENO) < 0)
-            {
-                perror("Dup2() has failed to redirect input.");
-                exit(-5);
-            }
-            close(ifd);
+            printf("GRAND\n");
+            close(pipefd[0]); //close read end of pipe
+            dup2(pipefd[1], STDOUT_FILENO); //set up stdout to write to pipe
+            execvp(parameters[0], argptr);
+            exit(0);
         }
-        //printf("GRAND\n");
-        close(pipefd[0]); //close read end of pipe
-        dup2(pipefd[1], STDOUT_FILENO); //set up stdout to write to pipe
-        close(pipefd[1]);
-        execvp(parameters[0], argptr);
-        exit(0);
-    }
+        else {
+            //should only have output
+            do{
+                grand_status = wait(NULL); 
+            }while(grand_status != grandch_pid);
 
-    if (child_pid != 0 && grandch_pid != 0) {
+            if(OUT != NULL)
+            {
+                if (file_exists(OUT) == 0)
+                {
+                    perror("File exists");
+                    return;
+                }
+                ofd = open(OUT,O_RDWR | O_CREAT | O_TRUNC, S_IRUSR, S_IWUSR);
+
+                if (ofd < 0) 
+                {
+                    perror("Existing file. Cannot overwrite.");
+                    exit(-2);
+                }
+
+                if(dup2(ofd, STDOUT_FILENO) < 0)
+                {
+                    perror("Dup2() has failed to redirect output.");
+                    exit(-4);
+                }
+
+                if(dup2(ofd, STDERR_FILENO) < 0)
+                {
+                    perror("Dup2() has failed to redirect output.");
+                    exit(-4);
+                }
+                close(ofd);
+            }           
+            /* This is done by the child process. */    
+            printf("CHILD\n");
+            close(pipefd[1]);
+            dup2(pipefd[0], STDIN_FILENO);
+            close(pipefd[0]);
+            execvp(PIPEARG, PIPEPTR);
+            exit(0);
+        }
+    }
+    else {
         /* This is run by the parent.  Wait for the child
             to terminate. */ 
         if (!ampFlag)
@@ -384,7 +344,7 @@ void pipecmd() {
             printf("%s [", parameters[0]);
             printf("%d]\n", child_pid);
         }
-        //printf("PARENT\n");
+        printf("PARENT\n");
     }
 }
 
@@ -518,8 +478,6 @@ int parse(char *s, char *argptr[MAXITEM], char parameters[][STORAGE])
 
     while((c=getword(s)) != 0)
     {
-        strcat(historyArr, s);
-        strcat(historyArr, " ");
         if (c == 0 && idx == 0) return -2;
 
         if((c == -1) && (idx == 0)) 
@@ -633,4 +591,3 @@ int parse(char *s, char *argptr[MAXITEM], char parameters[][STORAGE])
     }
     return 0;
 }
-
